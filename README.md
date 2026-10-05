@@ -4,12 +4,14 @@ An agent that finds high-profile international talent (founders, investors, C-su
 
 ## Quick start
 
-From this folder, get the dashboard (first time only), then start the talent API and the dashboard together:
+From this folder, fetch the pinned dashboard (first time only), then start the talent API and the dashboard together:
 
 ```bash
-git clone https://github.com/OlafenwaMoses/no10-hackathon-frontend.git no10-hackathon-frontend
+git submodule update --init
 docker compose up --build
 ```
+
+A new clone can run `git clone --recurse-submodules` instead of the first line. The dashboard comes from the source repo [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon). Until our changes are merged there, it's our fork, [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), pinned to its `talent-api-integration` branch.
 
 This needs `.env` and `no10-hackathon-frontend/.dev.vars` in place first; see [Run the API and dashboard locally](#run-the-api-and-dashboard-locally).
 
@@ -176,13 +178,13 @@ To change the columns, edit `PROFESSIONAL_FIELDS` in [agent/find_talents.py](age
 
 [docker-compose.yml](docker-compose.yml) runs two services:
 - **The talent API** from this repo.
-- **The GTT talent dashboard** from [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), cloned into `no10-hackathon-frontend/`. It's a fork of [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) with the talent API integration added, and this repo doesn't track that folder.
+- **The GTT talent dashboard,** in `no10-hackathon-frontend/` (see [Dashboard version](#dashboard-version)).
 
 A search started in the dashboard goes to the local API, and the people the agent finds are added to the dashboard's database.
 
 You need:
 - Docker.
-- **The dashboard:** `git clone https://github.com/OlafenwaMoses/no10-hackathon-frontend.git no10-hackathon-frontend`.
+- **The dashboard:** run `git submodule update --init` once.
 - **`.env`:** the agent's keys (see [Setup](#setup)), plus `API_KEY`, the key clients must send as `x-api-key`.
 - **`no10-hackathon-frontend/.dev.vars`:** the dashboard's settings. It's a copy of `.env_frontend` plus two lines: `TALENT_API_URL=http://api:8000` and `TALENT_API_KEY` set to the same value as `API_KEY`.
 
@@ -199,7 +201,25 @@ docker compose down          # stop both
 
 Locally, the API runs each search inside its own process instead of on a Vercel Queue, and caches results in `api-cache/` instead of Vercel Blob. The `LOCAL_DATA_DIR` setting in `docker-compose.yml` turns this on. The endpoints and payloads are the same as on Vercel (see [API](#api)), at `http://localhost:8000` instead.
 
-To search from the dashboard, and for what was changed in it, see [TALENT_API.md in the dashboard fork](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/main/TALENT_API.md).
+To search from the dashboard, and for what was changed in it, see [TALENT_API.md in the dashboard fork](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/talent-api-integration/TALENT_API.md).
+
+### Dashboard version
+
+| | Repo | Version |
+| --- | --- | --- |
+| Source repo | [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) | Without the talent API integration until our changes are merged |
+| Used here for now | [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), our fork of the source repo | Branch [`talent-api-integration`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/talent-api-integration), pinned at commit `ffa9f6c` |
+
+`no10-hackathon-frontend/` is a git submodule. This repo records the exact dashboard commit it works with, so it doesn't follow either repo's `main` branch.
+
+- **Newer commits on the integration branch:** run `git submodule update --remote no10-hackathon-frontend`, then commit the new pin.
+- **Once the changes are merged into the source repo:** point the submodule at it, then commit:
+
+  ```bash
+  git submodule set-url no10-hackathon-frontend https://github.com/magerags/no10-hackathon.git
+  git submodule set-branch --branch main no10-hackathon-frontend
+  git submodule update --remote no10-hackathon-frontend
+  ```
 
 ## API
 
@@ -398,7 +418,7 @@ The agent picks the new tool up on its next run. Exceptions raised by a tool are
 │   ├── jobs.py              # search jobs: create, cache, dispatch
 │   ├── storage.py           # Vercel Blob, or a local folder
 │   └── worker.py            # runs the agent for a search
-├── no10-hackathon-frontend/ # local clone of the dashboard (not tracked by this repo)
+├── no10-hackathon-frontend/ # the dashboard: a submodule of our fork of magerags/no10-hackathon
 ├── api-cache/               # searches cached by the local API (not tracked)
 ├── agent/
 │   └── find_talents.py      # the agent: prompts, tool discovery, reasoning + tool-calling loop, saving runs

@@ -1,5 +1,6 @@
-# Runs the talent API (this repo) and the talent dashboard (no10-hackathon-frontend/) locally.
-#   docker compose up --build    then open http://localhost:5173
+# Runs the talent API (this repo) and the talent dashboard locally. The dashboard is the
+# no10-hackathon-frontend/ submodule: our fork of magerags/no10-hackathon (see README).
+#   git submodule update --init && docker compose up --build    then open http://localhost:5173
 services:
   api:
     build: .
