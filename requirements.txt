@@ -1,0 +1,12 @@
+# Agent framework: provider-agnostic SDK, with its OpenAI extra
+tessaract[openai]==0.1.2
+# tessaract 0.1.2 is built and tested against openai 2.x; 3.x is a new major version
+openai>=2.45.0,<3
+
+# One SDK per talent-search tool in tooling/<name>/talent.py
+exa-py>=2.25.0
+linkup-sdk>=0.23.1
+parallel-web>=1.3.5
+
+# Loads API keys from .env
+python-dotenv>=1.2.0
