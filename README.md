@@ -1,6 +1,6 @@
 # Global Talent Taskforce: talent-finding agent
 
-An agent that finds high-profile international talent (founders, investors, C-suite executives and leading researchers) for the UK Global Talent Taskforce. It runs on [tessaract](https://github.com/jenniferumoke/tessaract) and OpenAI, and uses three web-research services as tools: [Exa](https://exa.ai), [Linkup](https://linkup.so) and [Parallel FindAll](https://parallel.ai).
+An agent that finds high-profile international talent (founders, investors, C-suite executives and leading researchers) for the UK Global Talent Taskforce. It runs on [tessaract](https://github.com/jenniferumoke/tessaract) and [OpenAI](https://openai.com), and uses three web-research services as tools: [Exa](https://exa.ai), [Linkup](https://www.linkup.so) and [Parallel FindAll](https://parallel.ai).
 
 ## How it works
 
@@ -8,6 +8,23 @@ An agent that finds high-profile international talent (founders, investors, C-su
 2. Each `talent.py` lists the API keys it needs. If they are set, its `find_talents_<name>(country, domain, count)` function is registered as a tool. If not, the tool is skipped and the agent says which key is missing.
 3. The agent sends its hardcoded system prompt and prompt to the model. The model calls the tools, the agent runs them (at the same time when there are several) and returns the results, and the model writes a shortlist. For each person the shortlist gives their role, why they are notable, links to the UK, how likely they are to move, the Taskforce lever most likely to help, and sources.
 4. The run is saved as a JSON file in `results/`. See [Results](#results).
+
+## Tooling
+
+The repo combines an agent framework, a model API and three web-research APIs. Every package is listed in [requirements.txt](requirements.txt).
+
+| Tool or library | Python package | Used in | What it's for |
+| --- | --- | --- | --- |
+| [tessaract](https://github.com/jenniferumoke/tessaract) | [`tessaract[openai]`](https://github.com/jenniferumoke/tessaract) | `agent/find_talents.py` | The agent framework. It defines tools, messages and reasoning settings in a provider-neutral way and turns them into OpenAI API calls. |
+| [OpenAI Responses API](https://openai.com) | [`openai`](https://github.com/openai/openai-python) | `agent/find_talents.py`, through tessaract | The model (`gpt-6-astra` by default). It decides which tools to call, merges their results and writes the shortlist. It also writes the three-word summary that names each results file. |
+| [Exa Agent API](https://exa.ai) | [`exa-py`](https://github.com/exa-labs/exa-py) | `tooling/exa/talent.py` | Powers `find_talents_exa`: a multi-step research agent that returns cited profiles as JSON matching a schema. |
+| [Linkup Search API](https://www.linkup.so) | [`linkup-sdk`](https://github.com/LinkupPlatform/linkup-python-sdk) | `tooling/linkup/talent.py` | Powers `find_talents_linkup`: deep web search that returns profiles as structured JSON in a single call. The cheapest of the three. |
+| [Parallel FindAll API](https://parallel.ai) | [`parallel-web`](https://github.com/parallel-web/parallel-sdk-python) | `tooling/parallels/talent.py` | Powers `find_talents_parallels`: finds candidate people, checks each one against the search criteria with citations, and keeps only those that pass. The most thorough checks, but the slowest. |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | [`python-dotenv`](https://github.com/theskumar/python-dotenv) | `agent/find_talents.py` | Loads the API keys from `.env`. Which keys are set decides which talent-search tools are enabled. |
+
+Each name links to the service's website, or to its GitHub repo for libraries. Each package links to its GitHub repo. The API docs each tool follows are linked at the top of its `talent.py`.
+
+The agent also uses three standard-library modules: `importlib` to find the `tooling/*/talent.py` files, `concurrent.futures` to run several tool calls at the same time, and `argparse` for the `--tools` option. Speed and cost for each talent-search tool are under [Tools](#tools).
 
 ## Setup
 
@@ -106,9 +123,9 @@ A run is saved only when it finishes. If it stops with an error, nothing is writ
 
 | Tool                       | Service           | How it searches                                                                                   | Typical time            | Cost per call              |
 | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------- | ----------------------- | -------------------------- |
-| `find_talents_exa`       | Exa Agent API     | Multi-step research agent (`effort="medium"`)                                                   | 50–75 seconds          | $0.10                      |
-| `find_talents_linkup`    | Linkup`/search` | Deep agentic search with structured output                                                        | 40 seconds to 3 minutes | $0.055                     |
-| `find_talents_parallels` | Parallel FindAll  | Generates candidates, then checks each against the criteria with citations (`generator="base"`) | about 3 minutes         | $0.25 plus $0.03 per match |
+| `find_talents_exa`       | [Exa Agent API](https://exa.ai) | Multi-step research agent (`effort="medium"`)                                                   | 50–75 seconds          | $0.10                      |
+| `find_talents_linkup`    | [Linkup](https://www.linkup.so) `/search` | Deep agentic search with structured output                                                        | 40 seconds to 3 minutes | $0.055                     |
+| `find_talents_parallels` | [Parallel FindAll](https://parallel.ai) | Generates candidates, then checks each against the criteria with citations (`generator="base"`) | about 3 minutes         | $0.25 plus $0.03 per match |
 
 Times are from test runs asking for 5 people. Costs are the services' list prices at the time of writing, plus a few cents of OpenAI usage, so a run with every tool costs about $0.60. Tool calls in the same turn run at the same time, so a run with every tool takes about as long as the slowest one (about 3½ minutes).
 
