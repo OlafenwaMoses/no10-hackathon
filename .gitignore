@@ -221,3 +221,15 @@ __marimo__/
 
 # macOS
 .DS_Store
+
+# Vercel
+.vercel-key
+.vercel/
+.vercel
+.env*
+
+# Local clone of the talent dashboard (github.com/magerags/no10-hackathon)
+no10-hackathon-frontend/
+
+# Searches cached by the local API (docker-compose.yml)
+api-cache/

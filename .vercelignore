@@ -1,0 +1,10 @@
+# Upload only what the API needs. Everything else, including .env, .vercel-key,
+# results/ and the problem-statement documents, stays on this machine.
+/*
+!/agent
+!/service
+!/tooling
+!/pyproject.toml
+/tooling/exa/setup_prompt.txt
+/tooling/linkup/sample_response.json
+__pycache__

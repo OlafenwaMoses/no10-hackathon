@@ -1,0 +1,7 @@
+# Send only what the API image needs. Keys (.env, .vercel-key) and data stay out of the build.
+*
+!requirements.txt
+!agent
+!service
+!tooling
+**/__pycache__

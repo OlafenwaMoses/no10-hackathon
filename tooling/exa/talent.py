@@ -12,7 +12,7 @@ REQUIRED_ENV_KEYS = ("EXA_API_KEY",)
 
 EFFORT = "medium"  # fixed $0.10 per run; "low" is cheaper and lighter, "high" more thorough
 MAX_COUNT = 20
-TIMEOUT_MS = 10 * 60 * 1000
+TIMEOUT_MS = 6 * 60 * 1000  # keeps a whole agent run inside the API worker's 800-second limit
 
 
 def _output_schema(count: int) -> dict:
@@ -29,6 +29,11 @@ def _output_schema(count: int) -> dict:
             "email": {"type": "string", "format": "email", "description": "Public professional email"},
             "phone": {"type": "string", "format": "phone", "description": "Phone number with country code"},
             "social_link": {"type": "string", "format": "uri", "description": "LinkedIn, X or other public profile"},
+            "image_url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Their LinkedIn or X profile photo URL, only if it certainly shows them",
+            },
             "nationality": {"type": "string"},
             "source_urls": {"type": "array", "items": {"type": "string", "format": "uri"}},
         },
@@ -41,23 +46,28 @@ def _output_schema(count: int) -> dict:
     }
 
 
-def find_talents_exa(country: str, domain: str, count: int) -> dict:
+def find_talents_exa(country: str, domain: str, count: int, query: str | None = None) -> dict:
     """Find high-profile people in a domain who are based in a country, using Exa's research agent.
 
     Runs multi-step web research and returns cited profiles: role, organisation, location,
     why they are notable, existing UK links and sources. Thorough but slow (minutes, not seconds).
     """
     count = max(1, min(int(count), MAX_COUNT))
-    exa = Exa(api_key=os.environ["EXA_API_KEY"])
-    run = exa.agent.runs.create(
-        query=(
+    if query:  # a brief replaces the one built from domain and country
+        task, location_rule = f"Find {count} people who match this brief: {query}", ""
+    else:
+        task = (
             f"Find {count} high-profile people in {domain} who are based in {country}: "
             "founders, investors, C-suite executives or world-leading researchers."
-        ),
+        )
+        location_rule = f"Only include people who currently live or primarily work in {country}. "
+
+    exa = Exa(api_key=os.environ["EXA_API_KEY"])
+    run = exa.agent.runs.create(
+        query=task,
         system_prompt=(
-            f"Only include people who currently live or primarily work in {country}. "
-            "Record any existing links to the UK (study, work, investments, UK Government roles). "
-            "Never guess: leave out email, phone, social_link and nationality when you cannot verify them, "
+            location_rule + "Record any existing links to the UK (study, work, investments, UK Government roles). "
+            "Never guess: leave out email, phone, social_link, image_url and nationality when you cannot verify them, "
             "and use 'unknown' for any other field you cannot verify."
         ),
         output_schema=_output_schema(count),

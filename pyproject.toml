@@ -1,0 +1,24 @@
+[project]
+name = "no10-talent-agent"
+version = "0.1.0"
+description = "Talent-scouting agent for the UK Global Talent Taskforce, served as an API on Vercel"
+requires-python = ">=3.12"
+# Vercel installs from this list. Keep it in sync with requirements.txt, which is for local use.
+dependencies = [
+    "tessaract[openai]==0.1.2",
+    "openai>=2.45.0,<3",
+    "exa-py>=2.25.0",
+    "linkup-sdk>=0.23.1",
+    "parallel-web>=1.3.5",
+    "python-dotenv>=1.2.0",
+    "fastapi>=0.117",
+    "vercel>=0.11",
+]
+
+# The HTTP API
+[tool.vercel]
+entrypoint = "service.app:app"
+
+# The queue worker that runs the agent
+[[tool.vercel.subscribers]]
+entrypoint = "service.worker"

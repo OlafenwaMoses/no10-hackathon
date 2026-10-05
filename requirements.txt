@@ -10,3 +10,10 @@ parallel-web>=1.3.5
 
 # Loads API keys from .env
 python-dotenv>=1.2.0
+
+# The API in service/. Vercel installs from pyproject.toml, so keep the two lists in sync.
+fastapi>=0.117
+vercel>=0.11
+
+# Serves the API locally (Dockerfile, docker-compose.yml); Vercel doesn't need it
+uvicorn>=0.30

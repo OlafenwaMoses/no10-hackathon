@@ -1,0 +1,34 @@
+# Runs the talent API (this repo) and the talent dashboard (no10-hackathon-frontend/) locally.
+#   docker compose up --build    then open http://localhost:5173
+services:
+  api:
+    build: .
+    env_file: .env  # API_KEY (what clients send as x-api-key), OPENAI_API_KEY and the tools' keys
+    environment:
+      LOCAL_DATA_DIR: /data  # cache searches in ./api-cache instead of Vercel Blob
+    volumes:
+      - ./api-cache:/data
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      # Node runs Vite (the Cloudflare plugin needs it); Bun installs packages from bun.lock.
+      # The local Workers runtime checks TLS (e.g. to Postgres) against the system CA certificates.
+      dockerfile_inline: |
+        FROM node:22-bookworm-slim
+        RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+        RUN npm install -g bun@1
+    working_dir: /app
+    command: sh -c "bun install && bun run dev --host 0.0.0.0"
+    volumes:
+      - ./no10-hackathon-frontend:/app
+      - frontend-node-modules:/app/node_modules  # Linux packages, kept apart from the host folder
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  frontend-node-modules:

@@ -16,7 +16,7 @@ GENERATOR = "base"  # $0.25 per run + $0.03 per match; "core" and "pro" search h
 MAX_COUNT = 20
 MIN_MATCH_LIMIT = 5  # FindAll accepts match_limit from 5 to 1000
 POLL_SECONDS = 5
-TIMEOUT_SECONDS = 15 * 60
+TIMEOUT_SECONDS = 6 * 60  # keeps a whole agent run inside the API worker's 800-second limit
 
 
 def _condition_value(candidate, condition: str) -> str | None:
@@ -29,21 +29,22 @@ def _source_urls(candidate, limit: int = 3) -> list[str]:
     return list(dict.fromkeys(url for url in urls if url))[:limit]
 
 
-def find_talents_parallels(country: str, domain: str, count: int) -> dict:
+def find_talents_parallels(country: str, domain: str, count: int, query: str | None = None) -> dict:
     """Find people in a domain who are based in a country, using Parallel FindAll.
 
     Every match is checked against the criteria with cited evidence, so precision is high,
     but runs are slow (often several minutes). Does not check links to the UK.
     """
     count = max(1, min(int(count), MAX_COUNT))
-    client = Parallel(api_key=os.environ["PARALLES_FIND_ALL_API_KEY"])
-    run = client.beta.findall.create(
-        objective=(
+    if query:  # a brief replaces the one built from domain and country
+        objective = f"FindAll people who match this brief: {query}"
+        match_conditions = [{"name": "matches_brief", "description": f"The person matches this brief: {query}"}]
+    else:
+        objective = (
             f"FindAll high-profile {domain} founders, investors, C-suite executives "
             f"or leading researchers based in {country}"
-        ),
-        entity_type="people",
-        match_conditions=[
+        )
+        match_conditions = [
             {
                 "name": "based_in_country",
                 "description": f"The person currently lives or primarily works in {country}.",
@@ -55,7 +56,13 @@ def find_talents_parallels(country: str, domain: str, count: int) -> dict:
                     f"in {domain} with a notable, verifiable track record."
                 ),
             },
-        ],
+        ]
+
+    client = Parallel(api_key=os.environ["PARALLES_FIND_ALL_API_KEY"])
+    run = client.beta.findall.create(
+        objective=objective,
+        entity_type="people",
+        match_conditions=match_conditions,
         generator=GENERATOR,
         match_limit=max(count, MIN_MATCH_LIMIT),
     )

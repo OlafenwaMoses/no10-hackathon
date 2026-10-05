@@ -12,6 +12,7 @@ REQUIRED_ENV_KEYS = ("LINKUP_API_KEY",)
 
 DEPTH = "deep"  # ~5-30s and $0.055 per call with structured output; "standard" is ~1-3s and $0.006
 MAX_COUNT = 20
+TIMEOUT_SECONDS = 6 * 60  # keeps a whole agent run inside the API worker's 800-second limit
 
 
 def _output_schema() -> dict:
@@ -28,6 +29,7 @@ def _output_schema() -> dict:
             "email": {"type": "string", "description": "Public professional email"},
             "phone": {"type": "string", "description": "Phone number with country code"},
             "social_link": {"type": "string", "description": "LinkedIn, X or other public profile URL"},
+            "image_url": {"type": "string", "description": "Their LinkedIn or X profile photo URL"},
             "nationality": {"type": "string"},
             "source_urls": {"type": "array", "items": {"type": "string"}},
         },
@@ -40,26 +42,33 @@ def _output_schema() -> dict:
     }
 
 
-def find_talents_linkup(country: str, domain: str, count: int) -> dict:
+def find_talents_linkup(country: str, domain: str, count: int, query: str | None = None) -> dict:
     """Find high-profile people in a domain who are based in a country, using Linkup deep web search.
 
     Fast (seconds to about half a minute). Returns profiles with role, organisation, location,
     why they are notable, existing UK links and source URLs.
     """
     count = max(1, min(int(count), MAX_COUNT))
+    who = (  # a brief replaces the one built from domain and country
+        f"people who match this brief: {query}"
+        if query
+        else f"high-profile people in {domain} who currently live or primarily work in {country}: "
+        "founders of fast-growing companies, investors, C-suite executives or world-leading researchers"
+    )
     client = LinkupClient(api_key=os.environ["LINKUP_API_KEY"])
     data = client.search(
         query=(
-            f"Find {count} high-profile people in {domain} who currently live or primarily work in {country}: "
-            "founders of fast-growing companies, investors, C-suite executives or world-leading researchers. "
+            f"Find {count} {who}. "
             "For each person, find their current role and organisation, why they are notable, "
             "and any existing links to the UK (study, work, investments, UK Government roles). "
             "Where publicly listed, also find their professional email, phone number with country code, "
-            "LinkedIn or X profile, and nationality. Leave out any of these that are not publicly listed."
+            "LinkedIn or X profile, the URL of that profile's photo, and nationality. "
+            "Leave out any of these that are not publicly listed."
         ),
         depth=DEPTH,
         output_type="structured",
         structured_output_schema=_output_schema(),
+        timeout=TIMEOUT_SECONDS,
     )
 
     talents = data.get("talents", []) if isinstance(data, dict) else []

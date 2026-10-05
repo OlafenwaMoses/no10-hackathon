@@ -15,16 +15,19 @@ import argparse
 import csv
 import importlib.util
 import inspect
+import io
 import json
 import os
 import re
 import sys
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+from exa_py import Exa
 from tessaract import (
     FunctionTool,
     FunctionToolResult,
@@ -55,7 +58,8 @@ and Clean Energy.
 
 How to work:
 - Source candidates with the find_talents_* tools. Call every available tool exactly once, \
-in the same turn, with the requested country, domain and count.
+in the same turn, with the requested country, domain and count. Set query only when the request \
+contains a labelled search brief, copied word for word; otherwise set it to null.
 - Use only facts returned by the tools. Never invent people, roles, links or URLs; write \
 "unknown" when no tool provided something.
 - Merge people found by more than one tool and note which tools found them.
@@ -72,10 +76,12 @@ visa, a UK HQ or R&D site, or an investment introduction
 End with one short paragraph on which tools returned results and any gaps.
 """
 
-PROMPT = (
-    "Find 10 leading people in Artificial Intelligence who are currently based in Germany and "
+# The API fills in country and count per request; the CLI uses PROMPT
+PROMPT_TEMPLATE = (
+    "Find {count} leading people in Artificial Intelligence who are currently based in {country} and "
     "whom the Global Talent Taskforce should approach about moving to, or expanding into, the UK."
 )
+PROMPT = PROMPT_TEMPLATE.format(count=10, country="Germany")
 
 # Sent after the research loop, together with a forced save_talents_csv call
 CSV_PROMPT = """\
@@ -87,7 +93,10 @@ save_talents_csv tool:
 - first_name and last_name
 - email, if a tool found one
 - phone, with country code, if a tool found one
-- social_link: a LinkedIn, X or other public profile URL, if a tool found one
+- social_link: one URL, the person's own LinkedIn profile if a tool found it, otherwise their X or \
+personal page; never a company page
+- image_url: a LinkedIn or X profile photo URL a tool gave for this person; never a logo or a \
+group photo
 - organisation
 - role
 - type_of_individual: the best fit of Founder, Investor, Highly Talented, HNWI (High Net Worth \
@@ -109,8 +118,13 @@ TALENT_SEARCH_INPUT = InputSchema(
             description="Sector or field, e.g. 'Artificial Intelligence', 'Life Sciences' or 'Clean Energy'.",
         ),
         "count": Property(type="integer", description="How many people to return, from 1 to 20."),
+        "query": Property(
+            type=["string", "null"],
+            description="A search brief saying exactly who to find. When set, the tool searches for this "
+            "brief instead of building one from country and domain. Null unless the request labels a search brief.",
+        ),
     },
-    required=["country", "domain", "count"],
+    required=["country", "domain", "count", "query"],
     additionalProperties=False,
 )
 
@@ -120,7 +134,13 @@ PROFESSIONAL_FIELDS = {
     "last_name": Property(type="string"),
     "email": Property(type=["string", "null"], description="Public professional email address"),
     "phone": Property(type=["string", "null"], description="Phone number with country code, e.g. +49 30 1234567"),
-    "social_link": Property(type=["string", "null"], description="LinkedIn, X or other public profile URL"),
+    "social_link": Property(
+        type=["string", "null"],
+        description="One URL: the person's own LinkedIn profile, else their X or personal page. Never a company page.",
+    ),
+    "image_url": Property(
+        type=["string", "null"], description="Their LinkedIn or X profile photo URL, if a tool gave one"
+    ),
     "organisation": Property(type=["string", "null"], description="Current company, fund or institution"),
     "role": Property(type=["string", "null"], description="Current job title"),
     "type_of_individual": Property(
@@ -207,9 +227,11 @@ def execute(call, functions: dict) -> dict:
     }
 
 
-def run_agent(client: Tessaract, tools: list[FunctionTool], functions: dict) -> tuple[str, list[dict], list]:
+def run_agent(
+    client: Tessaract, tools: list[FunctionTool], functions: dict, prompt: str = PROMPT
+) -> tuple[str, list[dict], list]:
     """Run the prompt to completion; return the final answer, a record of every tool call and the history."""
-    history = [SystemPrompt(content=SYSTEM_PROMPT), UserMessage(content=PROMPT)]
+    history = [SystemPrompt(content=SYSTEM_PROMPT), UserMessage(content=prompt)]
     tool_calls = []
 
     for _ in range(MAX_STEPS):
@@ -284,11 +306,22 @@ def save_run(
     return path
 
 
-def extract_professionals(client: Tessaract, tools: list[FunctionTool], history: list) -> list[dict]:
-    """Have the model merge everyone the tools found into CSV rows, by forcing a save_talents_csv call."""
+def extract_professionals(
+    client: Tessaract, tools: list[FunctionTool], history: list, limit: int | None = None
+) -> list[dict]:
+    """Have the model merge everyone the tools found into CSV rows, by forcing a save_talents_csv call.
+
+    With a limit, keep at most that many people (the API's numResults); without one, keep everyone.
+    """
+    prompt = CSV_PROMPT
+    if limit is not None:
+        prompt += (
+            f"\nKeep at most {limit} professionals. Prefer people more than one tool found and people who best "
+            "match the request, and keep a balanced mix of types when the request asks for several.\n"
+        )
     response = client.send(
         model=MODEL,
-        input=history + [UserMessage(content=CSV_PROMPT)],
+        input=history + [UserMessage(content=prompt)],
         tools=tools + [SAVE_CSV_TOOL],
         reasoning=REASONING,
         request_options={"tool_choice": {"type": "function", "name": SAVE_CSV_TOOL.name}},
@@ -296,15 +329,65 @@ def extract_professionals(client: Tessaract, tools: list[FunctionTool], history:
     call = next((item for item in response.output if item.type == "function_call"), None)
     if call is None:
         raise RuntimeError(f"Model returned no CSV rows (status: {response.status})")
-    return call.arguments["professionals"]
+    return call.arguments["professionals"][:limit]
+
+
+def to_csv(professionals: list[dict]) -> str:
+    """One row per professional, columns in CSV_COLUMNS order."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(professionals)
+    return buffer.getvalue()
 
 
 def save_csv(path: Path, professionals: list[dict]) -> None:
-    """Write one row per professional. utf-8-sig lets Excel show accented names correctly."""
-    with path.open("w", newline="", encoding="utf-8-sig") as file:
-        writer = csv.DictWriter(file, fieldnames=CSV_COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(professionals)
+    """Write the CSV file. utf-8-sig lets Excel show accented names correctly."""
+    path.write_text(to_csv(professionals), encoding="utf-8-sig", newline="")
+
+
+# Avatars: only a profile photo from the person's own LinkedIn or X account counts as certain.
+# A team page, logo or LinkedIn's no-photo placeholder is dropped: no avatar beats the wrong face.
+PROFILE_PAGE = re.compile(r"^https?://(?:[a-z]{2,3}\.)?(?:www\.)?(?:linkedin\.com/in/|(?:x|twitter)\.com/[^/?#]+/?$)", re.I)
+PROFILE_PHOTO = re.compile(r"^https://(?:media\.licdn\.com/dms/image/[^?]*/profile-displayphoto|pbs\.twimg\.com/profile_images/)")
+
+
+def _loads_as_image(url: str) -> bool:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status == 200 and response.headers.get_content_type().startswith("image/")
+    except (OSError, ValueError):
+        return False
+
+
+def _profile_photo(exa: Exa | None, profile_url: str) -> str | None:
+    """The photo Exa holds for a LinkedIn or X profile page, if any."""
+    if exa is None:
+        return None
+    try:
+        results = exa.get_contents([profile_url]).results
+    except Exception:  # a failed lookup only means no avatar
+        return None
+    return results[0].image if results else None
+
+
+def _avatar(person: dict, exa: Exa | None) -> str | None:
+    links = [link for link in re.split(r"[\s;,]+", person.get("social_link") or "") if PROFILE_PAGE.match(link)]
+    links.sort(key=lambda link: "linkedin.com" not in link.lower())  # LinkedIn first
+    supplied = person.get("image_url")
+    for photo in [_profile_photo(exa, link) for link in links] + [supplied]:
+        if photo and PROFILE_PHOTO.match(photo) and _loads_as_image(photo):
+            return photo
+    return None
+
+
+def add_avatars(professionals: list[dict]) -> list[dict]:
+    """Set each person's image_url to a profile photo that certainly shows them, or None."""
+    exa = Exa(api_key=os.environ["EXA_API_KEY"]) if os.environ.get("EXA_API_KEY") else None
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        photos = list(pool.map(lambda person: _avatar(person, exa), professionals))
+    return [{**person, "image_url": photo} for person, photo in zip(professionals, photos)]
 
 
 def main() -> None:
@@ -331,7 +414,7 @@ def main() -> None:
     path = save_run(client, started_at, tools, answer, tool_calls)
     print(f"\nSaved to {path.relative_to(REPO_ROOT)}")
 
-    professionals = extract_professionals(client, tools, history)
+    professionals = add_avatars(extract_professionals(client, tools, history))
     csv_path = path.with_suffix(".csv")
     save_csv(csv_path, professionals)
     print(f"Saved {len(professionals)} professionals to {csv_path.relative_to(REPO_ROOT)}")

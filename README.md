@@ -2,6 +2,25 @@
 
 An agent that finds high-profile international talent (founders, investors, C-suite executives and leading researchers) for the UK Global Talent Taskforce. It runs on [tessaract](https://github.com/jenniferumoke/tessaract) and [OpenAI](https://openai.com), and uses three web-research services as tools: [Exa](https://exa.ai), [Linkup](https://www.linkup.so) and [Parallel FindAll](https://parallel.ai).
 
+## Quick start
+
+From this folder, get the dashboard (first time only), then start the talent API and the dashboard together:
+
+```bash
+git clone https://github.com/OlafenwaMoses/no10-hackathon-frontend.git no10-hackathon-frontend
+docker compose up --build
+```
+
+This needs `.env` and `no10-hackathon-frontend/.dev.vars` in place first; see [Run the API and dashboard locally](#run-the-api-and-dashboard-locally).
+
+| What | Link |
+| --- | --- |
+| Dashboard | [http://localhost:5173](http://localhost:5173) |
+| Talent API (local) | [http://localhost:8000](http://localhost:8000) |
+| Talent API docs (local) | [http://localhost:8000/docs](http://localhost:8000/docs) |
+
+Stop both with `docker compose down`. Setup and details are in [Run the API and dashboard locally](#run-the-api-and-dashboard-locally).
+
 ## How it works
 
 1. `agent/find_talents.py` loads `.env` and looks for `tooling/<name>/talent.py` files.
@@ -11,7 +30,7 @@ An agent that finds high-profile international talent (founders, investors, C-su
 
 ## Tooling
 
-The repo combines an agent framework, a model API and three web-research APIs. Every package is listed in [requirements.txt](requirements.txt).
+The repo combines an agent framework, a model API and three web-research APIs, and is served as an API on Vercel. Every package is listed in [requirements.txt](requirements.txt).
 
 | Tool or library | Python package | Used in | What it's for |
 | --- | --- | --- | --- |
@@ -21,6 +40,8 @@ The repo combines an agent framework, a model API and three web-research APIs. E
 | [Linkup Search API](https://www.linkup.so) | [`linkup-sdk`](https://github.com/LinkupPlatform/linkup-python-sdk) | `tooling/linkup/talent.py` | Powers `find_talents_linkup`: deep web search that returns profiles as structured JSON in a single call. The cheapest of the three. |
 | [Parallel FindAll API](https://parallel.ai) | [`parallel-web`](https://github.com/parallel-web/parallel-sdk-python) | `tooling/parallels/talent.py` | Powers `find_talents_parallels`: finds candidate people, checks each one against the search criteria with citations, and keeps only those that pass. The most thorough checks, but the slowest. |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | [`python-dotenv`](https://github.com/theskumar/python-dotenv) | `agent/find_talents.py` | Loads the API keys from `.env`. Which keys are set decides which talent-search tools are enabled. |
+| [FastAPI](https://fastapi.tiangolo.com) | [`fastapi`](https://github.com/fastapi/fastapi) | `service/app.py` | The HTTP API: validates requests, checks the API key and serves the two endpoints. See [API](#api). |
+| [Vercel](https://vercel.com) | [`vercel`](https://github.com/vercel/vercel-py) | `service/` | Hosts the API. Vercel Queues runs each search in a background worker, and a private Vercel Blob store holds job status and cached CSVs. |
 
 Each name links to the service's website, or to its GitHub repo for libraries. Each package links to its GitHub repo. The API docs each tool follows are linked at the top of its `talent.py`.
 
@@ -52,7 +73,7 @@ PARALLES_FIND_ALL_API_KEY=...
 | `LINKUP_API_KEY`            | `find_talents_linkup`      | [app.linkup.so](https://app.linkup.so)                      |
 | `PARALLES_FIND_ALL_API_KEY` | `find_talents_parallels`   | [platform.parallel.ai](https://platform.parallel.ai)        |
 
-Only `OPENAI_API_KEY` is required. Leave a tool's key out and the agent runs without that tool. The Parallel key name is spelled `PARALLES_…`, as in this repo's `.env`.
+Only `OPENAI_API_KEY` is required. Leave a tool's key out and the agent runs without that tool. The Parallel key name is spelled `PARALLES_…`, as in this repo's `.env`. For the local API (see [Run the API and dashboard locally](#run-the-api-and-dashboard-locally)), also add `API_KEY`, the key its clients must send.
 
 ## Run
 
@@ -129,16 +150,182 @@ The `.csv` file has one row per professional. After the research loop, the agent
 | `first_name`, `last_name` | The person's name |
 | `email` | Public professional email, if a tool found one |
 | `phone` | Phone number with country code, if a tool found one |
-| `social_link` | LinkedIn, X or other public profile URL, if a tool found one |
+| `social_link` | The person's own LinkedIn profile, or else their X or personal page, if a tool found one |
+| `image_url` | A photo that certainly shows the person, for use as an avatar. See [Avatars](#avatars). |
 | `organisation` | Current company, fund or institution |
 | `role` | Current job title |
 | `type_of_individual` | One of Founder, Investor, Highly Talented, HNWI, C-Suite or Researcher |
 | `priority_sector` | The sector the person works in, such as AI, Web or Clean Energy |
 | `nationality` | Nationality, if a tool found it |
 
-An empty cell means no tool found that detail; the model is told never to guess. Only Exa and Linkup look for email, phone, social link and nationality. The file is UTF-8 with a byte-order mark, so Excel shows accented names correctly.
+An empty cell means no tool found that detail; the model is told never to guess. Only Exa and Linkup look for email, phone, social link, photo and nationality. The file is UTF-8 with a byte-order mark, so Excel shows accented names correctly.
+
+#### Avatars
+
+`image_url` holds a photo only when it certainly shows the person. After the CSV step, `add_avatars` in [agent/find_talents.py](agent/find_talents.py) checks each row:
+
+1. If `social_link` is the person's own LinkedIn or X profile, it fetches that profile's photo with Exa. A photo on their own account is them.
+2. Otherwise it uses a photo a tool supplied, but only a LinkedIn or X profile photo.
+3. The photo must load as an image. LinkedIn's no-photo placeholder doesn't count.
+
+Anything else, such as a team page, a logo or a group photo, is dropped, so some people have no avatar. A wrong face would be worse than none. The Exa lookups cost a fraction of a cent each.
 
 To change the columns, edit `PROFESSIONAL_FIELDS` in [agent/find_talents.py](agent/find_talents.py). The CSV columns follow its order.
+
+## Run the API and dashboard locally
+
+[docker-compose.yml](docker-compose.yml) runs two services:
+- **The talent API** from this repo.
+- **The GTT talent dashboard** from [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), cloned into `no10-hackathon-frontend/`. It's a fork of [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) with the talent API integration added, and this repo doesn't track that folder.
+
+A search started in the dashboard goes to the local API, and the people the agent finds are added to the dashboard's database.
+
+You need:
+- Docker.
+- **The dashboard:** `git clone https://github.com/OlafenwaMoses/no10-hackathon-frontend.git no10-hackathon-frontend`.
+- **`.env`:** the agent's keys (see [Setup](#setup)), plus `API_KEY`, the key clients must send as `x-api-key`.
+- **`no10-hackathon-frontend/.dev.vars`:** the dashboard's settings. It's a copy of `.env_frontend` plus two lines: `TALENT_API_URL=http://api:8000` and `TALENT_API_KEY` set to the same value as `API_KEY`.
+
+```bash
+docker compose up --build    # build and start both
+docker compose logs -f api   # watch the agent's tool calls
+docker compose down          # stop both
+```
+
+| Service | URL |
+| --- | --- |
+| Dashboard | [http://localhost:5173](http://localhost:5173) |
+| Talent API | [http://localhost:8000](http://localhost:8000), with docs at [http://localhost:8000/docs](http://localhost:8000/docs) |
+
+Locally, the API runs each search inside its own process instead of on a Vercel Queue, and caches results in `api-cache/` instead of Vercel Blob. The `LOCAL_DATA_DIR` setting in `docker-compose.yml` turns this on. The endpoints and payloads are the same as on Vercel (see [API](#api)), at `http://localhost:8000` instead.
+
+To search from the dashboard, and for what was changed in it, see [TALENT_API.md in the dashboard fork](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/main/TALENT_API.md).
+
+## API
+
+The agent also runs as an API on Vercel at **https://no10-talent-api.vercel.app**, with interactive docs at [/docs](https://no10-talent-api.vercel.app/docs). To run it locally instead, see [Run the API and dashboard locally](#run-the-api-and-dashboard-locally).
+
+Every request to `/api/...` needs an `x-api-key` header. The key is the `API_KEY` environment variable of the `no10-talent-api` project on Vercel.
+
+A search takes 3 to 5 minutes, so the API works in two steps.
+
+### 1. Start a search
+
+`POST /api/talent-searches` takes the same body as the talent dashboard's search form: `CreateSearchBody` in [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon/blob/main/src/api/types.ts). Every field is optional.
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `category` | Type of individual: `founder`, `investor`, `highly_talented`, `hnwi`, `c_suite`, `researcher` or `all` | `all` |
+| `sector` | `digital_tech`, `ai`, `life_sciences`, `clean_energy`, `pan_economy` or `all` | `all` |
+| `region` | `usa`, `india`, `singapore`, `brazil`, `americas_other`, `europe`, `asia_other` or `other`. Leave it out for all regions (global). | global |
+| `customRegion` | The region when `region` is `other`, such as `Nordics`, up to 60 characters. It's ignored for other regions, and `other` without it means global. | none |
+| `query` | A custom query of up to 1,000 characters. It replaces the brief built from `category`, `sector` and `region`. | none |
+| `numResults` | People in total, from 1 to 50 | `10` |
+
+Without a `query`, the API builds a search brief from `category`, `sector` and `region`, using the same templates as the dashboard. For `all` categories, the brief asks for a mix of all six types.
+
+```bash
+curl -X POST https://no10-talent-api.vercel.app/api/talent-searches \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"category": "investor", "sector": "clean_energy", "region": "europe", "numResults": 5}'
+```
+
+The response is `202 Accepted`:
+
+```json
+{
+  "id": "investor-clean-energy-europe-5",
+  "status": "pending",
+  "message": "The search is running. Check again in a minute.",
+  "status_url": "/api/talent-searches/investor-clean-energy-europe-5"
+}
+```
+
+With a custom query, send it in `query`:
+
+```bash
+curl -X POST https://no10-talent-api.vercel.app/api/talent-searches \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Series B climate-tech founders in California who studied in the UK", "numResults": 5}'
+```
+
+That search's id is `query-12f2f3747328310b-5`.
+
+### 2. Check the search and download the CSV
+
+```bash
+curl https://no10-talent-api.vercel.app/api/talent-searches/investor-clean-energy-europe-5 -H "x-api-key: $API_KEY"
+```
+
+The response is `200 OK`. While the agent is working, `status` is `pending`:
+
+```json
+{
+  "id": "investor-clean-energy-europe-5",
+  "status": "pending",
+  "message": "The search is running. Check again in a minute.",
+  "search": {"category": "investor", "sector": "clean_energy", "region": "europe", "customRegion": null, "query": null, "numResults": 5},
+  "requested_at": "2026-10-05T13:13:00+00:00"
+}
+```
+
+When it's done, `status` is `ready` and `csv_base64` holds the CSV file:
+
+```json
+{
+  "id": "investor-clean-energy-europe-5",
+  "status": "ready",
+  "message": "The search is done. Decode csv_base64 to get the CSV file.",
+  "search": {"category": "investor", "sector": "clean_energy", "region": "europe", "customRegion": null, "query": null, "numResults": 5},
+  "requested_at": "2026-10-05T13:13:00+00:00",
+  "finished_at": "2026-10-05T13:15:43+00:00",
+  "rows": 5,
+  "filename": "investor-clean-energy-europe-5.csv",
+  "csv_base64": "77u/Zmlyc3RfbmFtZSxsYXN0X25hbWUsZW1haWws..."
+}
+```
+
+To save the CSV to a file:
+
+```bash
+curl -s https://no10-talent-api.vercel.app/api/talent-searches/investor-clean-energy-europe-5 -H "x-api-key: $API_KEY" \
+  | python3 -c "import base64, json, sys; d = json.load(sys.stdin); open(d['filename'], 'wb').write(base64.b64decode(d['csv_base64']))"
+```
+
+The CSV has the columns described in [CSV](#csv), and at most `numResults` people. Each tool is asked for up to `numResults` people (20 at most per tool). The model then keeps the best matches, preferring people that more than one tool found and a balanced mix of types when `category` is `all`.
+
+### Caching and errors
+
+- **Without a `query`**, a search is identified by `category`, `sector`, `region` (with `customRegion`) and `numResults`. The id spells them out, for example `investor-clean-energy-europe-5` or `all-all-other-nordics-10`.
+- **With a `query`**, a search is identified by the query text and `numResults` only, because the query replaces the other fields. Case and extra spaces don't matter. The id is `query-<hash>-<numResults>`, and before reusing a stored result the API checks that its query text matches.
+- **A repeated search** returns `202` with `status` `ready` straight away once it's done. The agent doesn't run again, so a repeat costs nothing, and the GET returns the stored CSV. A different query text, or any other changed field, runs the agent.
+- **Cost:** a new search costs about $0.55 in provider charges for 5 people.
+- **A search that's still running** is returned as it is instead of being started again.
+- **Failed runs:** if a run fails, the GET returns `status` `failed` with an `error`, and sending the same search again re-runs it. A search still pending after 30 minutes counts as failed.
+- **Other responses:** `401` for a missing or wrong `x-api-key`, `404` for an unknown `id`, and `422` for an invalid body or `id`.
+
+### How it's built
+
+| Part | What it does |
+| --- | --- |
+| `service/app.py` | The FastAPI app. A POST records the job and puts a message on a Vercel Queue. |
+| `service/worker.py` | A queue-triggered function that runs the agent for each message and stores the result. |
+| `service/search_spec.py` | The request fields, the cache key and id, and the search brief. The brief templates are ported from the dashboard's query builder, so both systems look for the same people. |
+| `service/jobs.py` | Job storage: each search is `talent-searches/<id>.json` (its status) and `<id>.csv`. |
+| `service/storage.py` | Where jobs are stored: the private Blob store on Vercel, or a folder when `LOCAL_DATA_DIR` is set. Locally, `jobs.dispatch` also runs the worker inside the API process instead of queueing it. |
+| Blob store `no10-talent-cache` | Private Vercel Blob storage in London (`lhr1`). Files are readable only with the store's token, never by a public URL. |
+
+The Vercel project has these environment variables: `API_KEY` (plain), `OPENAI_API_KEY`, `EXA_API_KEY`, `LINKUP_API_KEY` and `PARALLES_FIND_ALL_API_KEY` (sensitive), and `BLOB_READ_WRITE_TOKEN` (added when the store was connected). Its default function time limit is 800 seconds, and each tool stops waiting after 6 minutes, so a run always finishes in time.
+
+To deploy changes, run this from the repo root with a Vercel token for the `moses-olafenwas-projects` team. On a fresh clone, run `npx vercel link --project no10-talent-api --scope moses-olafenwas-projects` first.
+
+```bash
+npx vercel deploy --prod --scope moses-olafenwas-projects --token <your Vercel token>
+```
+
+`.vercelignore` uploads only `agent/`, `service/`, `tooling/` and `pyproject.toml`, so `.env` and `results/` stay local. Vercel installs dependencies from `pyproject.toml`, not `requirements.txt`, so keep the two lists in sync. To clear a cached result, delete its two files from the `no10-talent-cache` store in the Vercel dashboard.
 
 ## Tools
 
@@ -150,7 +337,7 @@ To change the columns, edit `PROFESSIONAL_FIELDS` in [agent/find_talents.py](age
 
 Times are from test runs asking for 5 to 10 people. Costs are the services' list prices at the time of writing. With every tool, a run asking for 10 people costs about $0.75, including OpenAI usage. Tool calls in the same turn run at the same time, so a run takes about as long as the slowest tool plus the final CSV step: about 4 minutes for 10 people.
 
-Every tool takes the same arguments and returns the same shape:
+Every tool takes the same arguments: `country`, `domain`, `count` and an optional `query`. A `query` is a search brief that replaces the one the tool would build from country and domain. Every tool returns the same shape:
 
 ```json
 {
@@ -168,6 +355,7 @@ Every tool takes the same arguments and returns the same shape:
       "email": "...",
       "phone": "...",
       "social_link": "...",
+      "image_url": "...",
       "nationality": "...",
       "source_urls": ["..."]
     }
@@ -175,7 +363,7 @@ Every tool takes the same arguments and returns the same shape:
 }
 ```
 
-`email`, `phone`, `social_link` and `nationality` are left out when a tool can't find them.
+`email`, `phone`, `social_link`, `image_url` and `nationality` are left out when a tool can't find them.
 
 Notes on each tool:
 
@@ -188,7 +376,7 @@ Notes on each tool:
 
 1. Create `tooling/<name>/talent.py`.
 2. Declare the keys it needs: `REQUIRED_ENV_KEYS = ("MY_SERVICE_API_KEY",)`.
-3. Define `find_talents_<name>(country: str, domain: str, count: int) -> dict`. Its docstring becomes the tool description the model reads, so say what the source is good at.
+3. Define `find_talents_<name>(country: str, domain: str, count: int, query: str | None = None) -> dict`. Its docstring becomes the tool description the model reads, so say what the source is good at. When `query` is set, search for that brief instead of building one from `country` and `domain`. The API always passes a brief, and the CLI passes `None`.
 4. Return a dict with a `talents` list, like the shape above. Don't return a bare list: tessaract sends a list of dicts that have a `"type"` key to OpenAI unchanged instead of encoding it as JSON.
 5. Add the service's SDK to `requirements.txt` and its key to `.env`.
 
@@ -200,6 +388,18 @@ The agent picks the new tool up on its next run. Exceptions raised by a tool are
 .
 ├── .env                     # API keys: keep out of version control
 ├── requirements.txt
+├── pyproject.toml           # dependencies and entrypoints for the Vercel deployment
+├── .vercelignore            # what gets uploaded to Vercel
+├── Dockerfile               # the API image used by docker-compose.yml
+├── docker-compose.yml       # runs the API and the dashboard locally
+├── service/
+│   ├── app.py               # the API: POST and GET /api/talent-searches
+│   ├── search_spec.py       # request fields, search brief and cache key
+│   ├── jobs.py              # search jobs: create, cache, dispatch
+│   ├── storage.py           # Vercel Blob, or a local folder
+│   └── worker.py            # runs the agent for a search
+├── no10-hackathon-frontend/ # local clone of the dashboard (not tracked by this repo)
+├── api-cache/               # searches cached by the local API (not tracked)
 ├── agent/
 │   └── find_talents.py      # the agent: prompts, tool discovery, reasoning + tool-calling loop, saving runs
 ├── results/                 # one JSON file and one CSV file per run
