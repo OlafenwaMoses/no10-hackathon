@@ -24,6 +24,11 @@ def _output_schema() -> dict:
             "location": {"type": "string", "description": "City and country where they are based"},
             "notable_for": {"type": "string", "description": "One sentence on why they stand out"},
             "uk_links": {"type": "string", "description": "Existing ties to the UK or UK Government, or 'none found'"},
+            # Optional, so they are left out when not found
+            "email": {"type": "string", "description": "Public professional email"},
+            "phone": {"type": "string", "description": "Phone number with country code"},
+            "social_link": {"type": "string", "description": "LinkedIn, X or other public profile URL"},
+            "nationality": {"type": "string"},
             "source_urls": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["name", "role", "organisation", "location", "notable_for", "uk_links", "source_urls"],
@@ -48,7 +53,9 @@ def find_talents_linkup(country: str, domain: str, count: int) -> dict:
             f"Find {count} high-profile people in {domain} who currently live or primarily work in {country}: "
             "founders of fast-growing companies, investors, C-suite executives or world-leading researchers. "
             "For each person, find their current role and organisation, why they are notable, "
-            "and any existing links to the UK (study, work, investments, UK Government roles)."
+            "and any existing links to the UK (study, work, investments, UK Government roles). "
+            "Where publicly listed, also find their professional email, phone number with country code, "
+            "LinkedIn or X profile, and nationality. Leave out any of these that are not publicly listed."
         ),
         depth=DEPTH,
         output_type="structured",

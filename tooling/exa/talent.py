@@ -25,6 +25,11 @@ def _output_schema(count: int) -> dict:
             "location": {"type": "string", "description": "City and country where they are based"},
             "notable_for": {"type": "string", "description": "One sentence on why they stand out"},
             "uk_links": {"type": "string", "description": "Existing ties to the UK or UK Government, or 'none found'"},
+            # Optional, so they are left out when not found. Exa bills $0.02 per email and $0.07 per phone found.
+            "email": {"type": "string", "format": "email", "description": "Public professional email"},
+            "phone": {"type": "string", "format": "phone", "description": "Phone number with country code"},
+            "social_link": {"type": "string", "format": "uri", "description": "LinkedIn, X or other public profile"},
+            "nationality": {"type": "string"},
             "source_urls": {"type": "array", "items": {"type": "string", "format": "uri"}},
         },
         "required": ["name", "role", "organisation", "location", "notable_for", "uk_links", "source_urls"],
@@ -52,7 +57,8 @@ def find_talents_exa(country: str, domain: str, count: int) -> dict:
         system_prompt=(
             f"Only include people who currently live or primarily work in {country}. "
             "Record any existing links to the UK (study, work, investments, UK Government roles). "
-            "Never guess: use 'unknown' for a field you cannot verify."
+            "Never guess: leave out email, phone, social_link and nationality when you cannot verify them, "
+            "and use 'unknown' for any other field you cannot verify."
         ),
         output_schema=_output_schema(count),
         effort=EFFORT,
@@ -62,4 +68,10 @@ def find_talents_exa(country: str, domain: str, count: int) -> dict:
         raise RuntimeError(f"Exa agent run {run.id} ended {run.status}: {run.error}")
 
     talents = (run.output.structured or {}).get("talents", [])
-    return {"source": "exa", "country": country, "domain": domain, "talents": talents[:count]}
+    return {
+        "source": "exa",
+        "country": country,
+        "domain": domain,
+        "talents": talents[:count],
+        "cost_usd": run.cost_dollars.total if run.cost_dollars else None,  # varies with contacts found
+    }
