@@ -23,6 +23,13 @@ This needs `.env` and `no10-hackathon-frontend/.dev.vars` in place first; see [R
 
 Stop both with `docker compose down`. Setup and details are in [Run the API and dashboard locally](#run-the-api-and-dashboard-locally).
 
+Both also run on Vercel, with no local setup:
+
+| What | Link |
+| --- | --- |
+| Dashboard (Vercel) | [https://no10-talent-dashboard.vercel.app](https://no10-talent-dashboard.vercel.app). It asks for a password; see [Dashboard on Vercel](#dashboard-on-vercel). |
+| Talent API (Vercel) | [https://no10-talent-api.vercel.app](https://no10-talent-api.vercel.app), with docs at [/docs](https://no10-talent-api.vercel.app/docs). See [API](#api). |
+
 ## How it works
 
 1. `agent/find_talents.py` loads `.env` and looks for `tooling/<name>/talent.py` files.
@@ -209,6 +216,7 @@ To search from the dashboard, and for what was changed in it, see [TALENT_API.md
 | --- | --- | --- |
 | Source repo | [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) | Without the talent API integration until our changes are merged |
 | Used here for now | [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), our fork of the source repo | Branch [`talent-api-integration`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/talent-api-integration), pinned at commit `ffa9f6c` |
+| Deployed on Vercel | The same fork | Branch [`vercel`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/vercel): `talent-api-integration` ported from Cloudflare Workers to Vercel. See [Dashboard on Vercel](#dashboard-on-vercel). |
 
 `no10-hackathon-frontend/` is a git submodule. This repo records the exact dashboard commit it works with, so it doesn't follow either repo's `main` branch.
 
@@ -220,6 +228,27 @@ To search from the dashboard, and for what was changed in it, see [TALENT_API.md
   git submodule set-branch --branch main no10-hackathon-frontend
   git submodule update --remote no10-hackathon-frontend
   ```
+
+### Dashboard on Vercel
+
+The dashboard is deployed at **https://no10-talent-dashboard.vercel.app** (Vercel project `no10-talent-dashboard`). Its searches go to the deployed talent API, and the people found are scored and added to the same Postgres database the local dashboard uses.
+
+- **Password:** the dashboard asks for one. It's `APP_PASSWORD` in `.env_vercel_dashboard` in this folder, which git ignores. To remove the password, delete `APP_PASSWORD` from the project's environment variables and redeploy.
+- **Code:** the [`vercel` branch](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/vercel) of our fork of [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon). The source repo runs on Cloudflare Workers, so this branch ports it to Vercel: [Nitro](https://nitro.build) serves the React app and the Hono API, and [Vercel Workflows](https://vercel.com/docs/workflows) replaces Cloudflare Workflows for the search and scoring pipeline. Its [VERCEL.md](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/vercel/VERCEL.md) lists the changes.
+- **Link to the API:** the project's `TALENT_API_URL` is `https://no10-talent-api.vercel.app`, and its `TALENT_API_KEY` matches the API's `API_KEY`. The other variables are copied from `.env_frontend`.
+- **Region:** functions run in London (`lhr1`), next to the database.
+- **Progress:** each search and candidate is a workflow run. To see their steps, open the project in Vercel and go to **Observability**, then **Workflows**.
+
+The submodule stays on `talent-api-integration`, the branch in the pull request to the source repo, so Docker Compose keeps working. To redeploy the dashboard, check out the `vercel` branch in a separate folder and deploy it:
+
+```bash
+git -C no10-hackathon-frontend fetch origin vercel
+git -C no10-hackathon-frontend worktree add "$PWD/../dashboard-vercel" vercel
+cd ../dashboard-vercel
+npx --yes bun@1 install
+npx vercel link --project no10-talent-dashboard --scope moses-olafenwas-projects   # first time only
+npx vercel deploy --prod --scope moses-olafenwas-projects --token <your Vercel token>
+```
 
 ## API
 
@@ -407,6 +436,7 @@ The agent picks the new tool up on its next run. Exceptions raised by a tool are
 ```
 .
 ├── .env                     # API keys: keep out of version control
+├── .env_vercel_dashboard    # the deployed dashboard's password (not tracked)
 ├── requirements.txt
 ├── pyproject.toml           # dependencies and entrypoints for the Vercel deployment
 ├── .vercelignore            # what gets uploaded to Vercel
