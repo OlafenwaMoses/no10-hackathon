@@ -214,7 +214,7 @@ To search from the dashboard, and for what was changed in it, see [TALENT_API.md
 
 | | Repo | Version |
 | --- | --- | --- |
-| Used here and on Vercel | [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), our fork of the source repo | Branch [`main`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/main): the talent API integration, ported from Cloudflare Workers to Vercel. Pinned at commit `ce3fb9a`. |
+| Used here and on Vercel | [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), our fork of the source repo | Branch [`main`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/main): the talent API integration, ported from Cloudflare Workers to Vercel. Pinned at commit `02205a7`. |
 | Cloudflare version | The same fork | Branch [`talent-api-integration`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/talent-api-integration): the same integration on Cloudflare Workers, as proposed to the source repo |
 | Source repo | [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) | No longer publicly available, as of 7 October 2026 |
 
@@ -227,7 +227,7 @@ The dashboard is deployed at **https://no10-talent-dashboard.vercel.app** (Verce
 - **Password:** the dashboard asks for one. It's `APP_PASSWORD` in `.env_vercel_dashboard` in this folder, which git ignores. To remove the password, delete `APP_PASSWORD` from the project's environment variables and redeploy.
 - **Code:** the `main` branch of our fork, the same code as the submodule. The source repo, [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon), runs on Cloudflare Workers, so the fork ports it to Vercel: [Nitro](https://nitro.build) serves the React app and the Hono API, and [Vercel Workflows](https://vercel.com/docs/workflows) replaces Cloudflare Workflows for the search and scoring pipeline. Its [VERCEL.md](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/main/VERCEL.md) lists the changes.
 - **Link to the API:** the project's `TALENT_API_URL` is `https://no10-talent-api.vercel.app`, and its `TALENT_API_KEY` matches the API's `API_KEY`. The other variables are copied from `.env_frontend`.
-- **Database:** `DATABASE_URL`, a sensitive variable. Use the same database in `.env_frontend` and `no10-hackathon-frontend/.dev.vars` so local and deployed dashboards share data. A new, empty database needs the dashboard's tables first: in `no10-hackathon-frontend/`, run `npx --yes bun@1 install`, then `DATABASE_URL='<url>' npx --yes bun@1 x drizzle-kit migrate`.
+- **Database:** [Neon](https://neon.tech) Postgres on the free plan in London, named `no10-talent-dashboard-db`. It was created through the Vercel Marketplace and is connected to the project, which sets `DATABASE_URL` and the other `PG*`/`POSTGRES_*` variables. `.env_frontend` and `no10-hackathon-frontend/.dev.vars` use the same database, so the local and deployed dashboards share data. It replaced the team's PlanetScale database, which was deleted on 7 October 2026. A new, empty database needs the dashboard's tables first: in `no10-hackathon-frontend/`, run `npx --yes bun@1 install`, then `DATABASE_URL='<url>' npx --yes bun@1 x drizzle-kit migrate`.
 - **Region:** functions run in London (`lhr1`).
 - **Progress:** each search and candidate is a workflow run. To see their steps, open the project in Vercel and go to **Observability**, then **Workflows**.
 
