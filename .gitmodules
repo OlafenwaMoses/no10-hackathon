@@ -1,4 +1,4 @@
 [submodule "no10-hackathon-frontend"]
 	path = no10-hackathon-frontend
 	url = https://github.com/OlafenwaMoses/no10-hackathon-frontend.git
-	branch = talent-api-integration
+	branch = main

@@ -11,7 +11,7 @@ git submodule update --init
 docker compose up --build
 ```
 
-A new clone can run `git clone --recurse-submodules` instead of the first line. The dashboard comes from the source repo [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon). Until our changes are merged there, it's our fork, [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), pinned to its `talent-api-integration` branch.
+A new clone can run `git clone --recurse-submodules` instead of the first line. The dashboard is the `main` branch of our fork, [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), of the source repo [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon), which is no longer publicly available.
 
 This needs `.env` and `no10-hackathon-frontend/.dev.vars` in place first; see [Run the API and dashboard locally](#run-the-api-and-dashboard-locally).
 
@@ -208,44 +208,33 @@ docker compose down          # stop both
 
 Locally, the API runs each search inside its own process instead of on a Vercel Queue, and caches results in `api-cache/` instead of Vercel Blob. The `LOCAL_DATA_DIR` setting in `docker-compose.yml` turns this on. The endpoints and payloads are the same as on Vercel (see [API](#api)), at `http://localhost:8000` instead.
 
-To search from the dashboard, and for what was changed in it, see [TALENT_API.md in the dashboard fork](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/talent-api-integration/TALENT_API.md).
+To search from the dashboard, and for what was changed in it, see [TALENT_API.md in the dashboard fork](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/main/TALENT_API.md).
 
 ### Dashboard version
 
 | | Repo | Version |
 | --- | --- | --- |
-| Source repo | [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) | Without the talent API integration until our changes are merged |
-| Used here for now | [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), our fork of the source repo | Branch [`talent-api-integration`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/talent-api-integration), pinned at commit `ffa9f6c` |
-| Deployed on Vercel | The same fork | Branch [`vercel`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/vercel): `talent-api-integration` ported from Cloudflare Workers to Vercel. See [Dashboard on Vercel](#dashboard-on-vercel). |
+| Used here and on Vercel | [OlafenwaMoses/no10-hackathon-frontend](https://github.com/OlafenwaMoses/no10-hackathon-frontend), our fork of the source repo | Branch [`main`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/main): the talent API integration, ported from Cloudflare Workers to Vercel. Pinned at commit `ce3fb9a`. |
+| Cloudflare version | The same fork | Branch [`talent-api-integration`](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/talent-api-integration): the same integration on Cloudflare Workers, as proposed to the source repo |
+| Source repo | [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon) | No longer publicly available, as of 7 October 2026 |
 
-`no10-hackathon-frontend/` is a git submodule. This repo records the exact dashboard commit it works with, so it doesn't follow either repo's `main` branch.
-
-- **Newer commits on the integration branch:** run `git submodule update --remote no10-hackathon-frontend`, then commit the new pin.
-- **Once the changes are merged into the source repo:** point the submodule at it, then commit:
-
-  ```bash
-  git submodule set-url no10-hackathon-frontend https://github.com/magerags/no10-hackathon.git
-  git submodule set-branch --branch main no10-hackathon-frontend
-  git submodule update --remote no10-hackathon-frontend
-  ```
+`no10-hackathon-frontend/` is a git submodule that follows the fork's `main` branch. This repo records the exact commit it works with. To move to newer commits on `main`, run `git submodule update --remote no10-hackathon-frontend`, then commit the new pin.
 
 ### Dashboard on Vercel
 
-The dashboard is deployed at **https://no10-talent-dashboard.vercel.app** (Vercel project `no10-talent-dashboard`). Its searches go to the deployed talent API, and the people found are scored and added to the same Postgres database the local dashboard uses.
+The dashboard is deployed at **https://no10-talent-dashboard.vercel.app** (Vercel project `no10-talent-dashboard`). Its searches go to the deployed talent API, and the people found are scored and added to its Postgres database.
 
 - **Password:** the dashboard asks for one. It's `APP_PASSWORD` in `.env_vercel_dashboard` in this folder, which git ignores. To remove the password, delete `APP_PASSWORD` from the project's environment variables and redeploy.
-- **Code:** the [`vercel` branch](https://github.com/OlafenwaMoses/no10-hackathon-frontend/tree/vercel) of our fork of [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon). The source repo runs on Cloudflare Workers, so this branch ports it to Vercel: [Nitro](https://nitro.build) serves the React app and the Hono API, and [Vercel Workflows](https://vercel.com/docs/workflows) replaces Cloudflare Workflows for the search and scoring pipeline. Its [VERCEL.md](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/vercel/VERCEL.md) lists the changes.
+- **Code:** the `main` branch of our fork, the same code as the submodule. The source repo, [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon), runs on Cloudflare Workers, so the fork ports it to Vercel: [Nitro](https://nitro.build) serves the React app and the Hono API, and [Vercel Workflows](https://vercel.com/docs/workflows) replaces Cloudflare Workflows for the search and scoring pipeline. Its [VERCEL.md](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/main/VERCEL.md) lists the changes.
 - **Link to the API:** the project's `TALENT_API_URL` is `https://no10-talent-api.vercel.app`, and its `TALENT_API_KEY` matches the API's `API_KEY`. The other variables are copied from `.env_frontend`.
-- **Region:** functions run in London (`lhr1`), next to the database.
+- **Database:** `DATABASE_URL`, a sensitive variable. Use the same database in `.env_frontend` and `no10-hackathon-frontend/.dev.vars` so local and deployed dashboards share data. A new, empty database needs the dashboard's tables first: in `no10-hackathon-frontend/`, run `npx --yes bun@1 install`, then `DATABASE_URL='<url>' npx --yes bun@1 x drizzle-kit migrate`.
+- **Region:** functions run in London (`lhr1`).
 - **Progress:** each search and candidate is a workflow run. To see their steps, open the project in Vercel and go to **Observability**, then **Workflows**.
 
-The submodule stays on `talent-api-integration`, the branch in the pull request to the source repo, so Docker Compose keeps working. To redeploy the dashboard, check out the `vercel` branch in a separate folder and deploy it:
+To redeploy the dashboard, deploy the submodule folder. After changing an environment variable, redeploy for it to take effect.
 
 ```bash
-git -C no10-hackathon-frontend fetch origin vercel
-git -C no10-hackathon-frontend worktree add "$PWD/../dashboard-vercel" vercel
-cd ../dashboard-vercel
-npx --yes bun@1 install
+cd no10-hackathon-frontend
 npx vercel link --project no10-talent-dashboard --scope moses-olafenwas-projects   # first time only
 npx vercel deploy --prod --scope moses-olafenwas-projects --token <your Vercel token>
 ```
@@ -260,7 +249,7 @@ A search takes 3 to 5 minutes, so the API works in two steps.
 
 ### 1. Start a search
 
-`POST /api/talent-searches` takes the same body as the talent dashboard's search form: `CreateSearchBody` in [magerags/no10-hackathon](https://github.com/magerags/no10-hackathon/blob/main/src/api/types.ts). Every field is optional.
+`POST /api/talent-searches` takes the same body as the talent dashboard's search form: `CreateSearchBody` in the dashboard's [src/api/types.ts](https://github.com/OlafenwaMoses/no10-hackathon-frontend/blob/main/src/api/types.ts). Every field is optional.
 
 | Field | Values | Default |
 | --- | --- | --- |
